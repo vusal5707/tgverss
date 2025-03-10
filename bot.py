@@ -2,7 +2,7 @@ import os
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command, Text
+from aiogram.filters import Command, Text, CallbackData
 from aiogram.utils import executor
 from dotenv import load_dotenv
 
@@ -31,7 +31,7 @@ async def settings(message: Message):
     await message.answer("Выберите настройку:", reply_markup=markup)
 
 # Обработка callback запроса для изменения приоритета
-@dp.callback_query(lambda c: c.data == "change_priority")
+@dp.callback_query(Text("change_priority"))
 async def change_priority(callback: CallbackQuery):
     await callback.message.answer("Выберите приоритет (низкий, средний, высокий):")
     markup = InlineKeyboardMarkup()
@@ -43,20 +43,20 @@ async def change_priority(callback: CallbackQuery):
     await callback.message.answer("Выберите приоритет:", reply_markup=markup)
 
 # Обработка выбора приоритета
-@dp.callback_query(lambda c: c.data.startswith("priority_"))
+@dp.callback_query(Text(lambda c: c.data.startswith("priority_")))
 async def set_priority(callback: CallbackQuery):
     priority = callback.data.split("_")[1]
     await callback.message.answer(f"Выбран приоритет: {priority}")
 
 # Обработка команд для настроек меню
-@dp.callback_query(lambda c: c.data == "settings_menu")
+@dp.callback_query(Text("settings_menu"))
 async def settings_menu(callback: CallbackQuery):
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("Изменить название меню", callback_data="change_menu_name"))
     await callback.message.answer("Настройки меню:", reply_markup=markup)
 
 # Обработка изменения названия меню
-@dp.callback_query(lambda c: c.data == "change_menu_name")
+@dp.callback_query(Text("change_menu_name"))
 async def change_menu_name(callback: CallbackQuery):
     await callback.message.answer("Введите новое название меню:")
     # Логика для изменения названия меню (можно добавить сохранение в базу данных или файл)
