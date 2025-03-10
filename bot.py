@@ -19,6 +19,14 @@ dp = Dispatcher()
 # Хранение соответствия между запросами и пользователями
 user_requests = {}
 
+# Метрики
+metrics = {
+    "total_requests": 0,
+    "approved_requests": 0,
+    "rejected_requests": 0,
+    "pending_requests": 0
+}
+
 # Обработчик сообщений от пользователей
 @dp.message_handler()
 async def handle_user_message(message: Message):
@@ -43,6 +51,10 @@ async def handle_user_message(message: Message):
     # Отправляем сообщение в группу №2
     sent_message = await bot.send_message(GROUP_OUTPUT_ID, formatted_message)
     user_requests[sent_message.message_id] = chat_id  # Связываем запрос с отправителем
+
+    # Обновляем метрику по запросам
+    metrics["total_requests"] += 1
+    metrics["pending_requests"] += 1
     
     # Создаем кнопки для ответа
     keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -85,9 +97,17 @@ async def handle_callback(callback: CallbackQuery):
         await bot.send_message(user_chat_id, "✅ <b>Ваш запрос одобрен!</b>")
         await callback.message.edit_text(callback.message.text + "\n\n✅ <b>Админ одобрил запрос.</b>", reply_markup=None)
 
+        # Обновляем метрики
+        metrics["approved_requests"] += 1
+        metrics["pending_requests"] -= 1
+
     elif action == "reject":
         await bot.send_message(user_chat_id, "❌ <b>Ваш запрос отклонён.</b>")
         await callback.message.edit_text(callback.message.text + "\n\n❌ <b>Админ отклонил запрос.</b>", reply_markup=None)
+
+        # Обновляем метрики
+        metrics["rejected_requests"] += 1
+        metrics["pending_requests"] -= 1
 
     elif action == "custom":
         await bot.send_message(user_chat_id, "✏️ Напишите свой ответ в этом чате.")
@@ -95,6 +115,18 @@ async def handle_callback(callback: CallbackQuery):
         user_requests[callback.from_user.id] = user_chat_id
 
     await callback.answer()  # Подтверждаем нажатие кнопки
+
+# Функция для получения текущих метрик
+@dp.message_handler(commands=['metrics'])
+async def show_metrics(message: Message):
+    metric_message = (
+        f"📊 <b>Метрики бота</b>\n\n"
+        f"✅ Обработано запросов: {metrics['total_requests']}\n"
+        f"✅ Одобрено запросов: {metrics['approved_requests']}\n"
+        f"❌ Отклонено запросов: {metrics['rejected_requests']}\n"
+        f"⏳ В процессе запросов: {metrics['pending_requests']}\n"
+    )
+    await message.reply(metric_message)
 
 # Запуск бота
 if __name__ == "__main__":
