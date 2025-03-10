@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 # Загрузка переменных из .env
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_INPUT_ID = int(os.getenv("GROUP_INPUT_ID"))  # Преобразуем в int
-GROUP_OUTPUT_ID = int(os.getenv("GROUP_OUTPUT_ID"))  # Преобразуем в int
+GROUP_INPUT_ID = int(os.getenv("GROUP_INPUT_ID"))
+GROUP_OUTPUT_ID = int(os.getenv("GROUP_OUTPUT_ID"))
 
 # Настройка бота
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +41,7 @@ async def handle_user_message(message: Message):
                          f"📅 Дата: {date}")
     
     sent_message = await bot.send_message(GROUP_OUTPUT_ID, formatted_message)
-    user_requests[sent_message.message_id] = chat_id  # Связываем запрос с отправителем
+    user_requests[sent_message.message_id] = chat_id
     
     await message.reply("Запрос отправлен!")
 
@@ -52,4 +52,5 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
