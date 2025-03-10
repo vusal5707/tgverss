@@ -70,4 +70,12 @@ async def echo(message: Message):
 # Функция для получения статистики запросов
 @dp.message(Command("metrics"))
 async def metrics(message: Message):
-    # Можете з
+    # Можете здесь подключить логику для отслеживания количества запросов
+    await message.answer("Здесь будет отображаться статистика запросов.")
+
+# Запуск бота
+async def on_start():
+    await dp.start_polling(bot)
+
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True)
