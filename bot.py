@@ -1,161 +1,81 @@
-import logging
 import os
-import asyncio
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram import F
+import logging
+from aiogram import Bot, Dispatcher
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command, Text
+from aiogram.utils import executor
 from dotenv import load_dotenv
 
-# Загрузка переменных из .env
+# Загружаем переменные из .env
 load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_INPUT_ID = os.getenv("GROUP_INPUT_ID")  # Группа, где пишут запросы
-GROUP_OUTPUT_ID = os.getenv("GROUP_OUTPUT_ID")  # Группа, куда бот пересылает
-YOUR_ADMIN_ID = os.getenv("YOUR_ADMIN_ID")  # ID администратора
 
-# Настройка бота
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
+
+# Токен бота из .env
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Хранение соответствия между запросами и пользователями
-user_requests = {}
+# Команда /start
+@dp.message(Command("start"))
+async def start(message: Message):
+    await message.answer("Привет! Я готов к работе.")
 
-# Переменные для настройки
-request_count = 0
-priority_settings = {}  # Словарь для хранения настроек приоритетов
-menu_settings = {}  # Словарь для хранения настроек меню
+# Обработка команды /settings
+@dp.message(Command("settings"))
+async def settings(message: Message):
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("Изменить приоритет", callback_data="change_priority"))
+    markup.add(InlineKeyboardButton("Настройки меню", callback_data="settings_menu"))
+    await message.answer("Выберите настройку:", reply_markup=markup)
 
-# Обработчик сообщений от пользователей
-async def handle_user_message(message: Message):
-    global request_count
-    chat_id = message.chat.id
-    text = message.text
-    
-    # Разбиваем сообщение по пробелам
-    parts = text.split()
-    if len(parts) < 4:
-        await message.reply("Ошибка! Отправьте данные в формате: \nТип документа Party ID Email Дата", parse_mode="HTML")
-        return
-    
-    doc_type, party_id, email, date = parts[0], parts[1], parts[2], " ".join(parts[3:])
-    
-    # Создание кнопок для выбора приоритета
-    keyboard = InlineKeyboardMarkup(row_width=3)
-    keyboard.add(
-        InlineKeyboardButton("Высокий", callback_data="priority_high"),
+# Обработка callback запроса для изменения приоритета
+@dp.callback_query(lambda c: c.data == "change_priority")
+async def change_priority(callback: CallbackQuery):
+    await callback.message.answer("Выберите приоритет (низкий, средний, высокий):")
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton("Низкий", callback_data="priority_low"),
         InlineKeyboardButton("Средний", callback_data="priority_medium"),
-        InlineKeyboardButton("Низкий", callback_data="priority_low")
+        InlineKeyboardButton("Высокий", callback_data="priority_high")
     )
-    
-    # Формируем сообщение
-    formatted_message = (f"🔹 Дополнительная верификация\n"
-                         f"Клиент предоставил документы\n"
-                         f"📄 Тип документа: {doc_type}\n"
-                         f"🆔 Party ID: {party_id}\n"
-                         f"📧 Email: {email}\n"
-                         f"📅 Дата: {date}")
-    
-    # Отправка сообщения с кнопками для выбора приоритета
-    sent_message = await bot.send_message(chat_id, formatted_message, reply_markup=keyboard, parse_mode="HTML")
-    user_requests[sent_message.message_id] = chat_id  # Связываем запрос с отправителем
-    
-    # Увеличиваем счетчик запросов
-    request_count += 1
-    await message.reply(f"Запрос отправлен! Всего запросов: {request_count}", parse_mode="HTML")
+    await callback.message.answer("Выберите приоритет:", reply_markup=markup)
 
-# Обработчик выбора приоритета
-async def handle_priority_choice(callback_query: types.CallbackQuery):
-    user_chat_id = user_requests.get(callback_query.message.message_id)
-    if user_chat_id:
-        # Сохраняем приоритет
-        if callback_query.data == "priority_high":
-            priority = "Высокий"
-        elif callback_query.data == "priority_medium":
-            priority = "Средний"
-        else:
-            priority = "Низкий"
-        
-        # Отправляем сообщение пользователю о выбранном приоритете
-        await bot.send_message(user_chat_id, f"Вы выбрали приоритет: {priority}", parse_mode="HTML")
-        
-        # Добавляем приоритет в сообщение для группы
-        formatted_message_with_priority = f"{callback_query.message.text}\nПриоритет: {priority}"
-        
-        # Отправляем запрос в группу OUTPUT с приоритетом
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton("Да", callback_data="yes"))
-        keyboard.add(InlineKeyboardButton("Нет", callback_data="no"))
-        keyboard.add(InlineKeyboardButton("Свой ответ", callback_data="custom"))
-        
-        await bot.send_message(GROUP_OUTPUT_ID, formatted_message_with_priority, reply_markup=keyboard, parse_mode="HTML")
-        await callback_query.answer()
+# Обработка выбора приоритета
+@dp.callback_query(lambda c: c.data.startswith("priority_"))
+async def set_priority(callback: CallbackQuery):
+    priority = callback.data.split("_")[1]
+    await callback.message.answer(f"Выбран приоритет: {priority}")
 
-# Обработчик ответов в группе OUTPUT (от админа)
-async def handle_group_reply(message: Message):
-    if message.reply_to_message and message.reply_to_message.message_id in user_requests:
-        user_chat_id = user_requests[message.reply_to_message.message_id]
-        await bot.send_message(user_chat_id, f"Ответ на ваш запрос:\n{message.text}", parse_mode="HTML")
+# Обработка команд для настроек меню
+@dp.callback_query(lambda c: c.data == "settings_menu")
+async def settings_menu(callback: CallbackQuery):
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("Изменить название меню", callback_data="change_menu_name"))
+    await callback.message.answer("Настройки меню:", reply_markup=markup)
 
-# Обработчик callback кнопок (Да, Нет, Свой ответ)
-async def handle_callback(callback_query: types.CallbackQuery):
-    user_chat_id = user_requests.get(callback_query.message.message_id)
-    if user_chat_id:
-        if callback_query.data == "yes":
-            await bot.send_message(user_chat_id, "Вы подтвердили запрос.", parse_mode="HTML")
-        elif callback_query.data == "no":
-            await bot.send_message(user_chat_id, "Вы отклонили запрос.", parse_mode="HTML")
-        elif callback_query.data == "custom":
-            await bot.send_message(user_chat_id, "Пожалуйста, напишите свой ответ.", parse_mode="HTML")
-        
-        await callback_query.answer()
+# Обработка изменения названия меню
+@dp.callback_query(lambda c: c.data == "change_menu_name")
+async def change_menu_name(callback: CallbackQuery):
+    await callback.message.answer("Введите новое название меню:")
+    # Логика для изменения названия меню (можно добавить сохранение в базу данных или файл)
 
-# Команда /settings для админа, где он может настроить данные
-@dp.callback_query_handler(commands=['settings'])
-async def settings_handler(callback_query: types.CallbackQuery):
-    if callback_query.from_user.id == int(YOUR_ADMIN_ID):
-        # Отправка меню с настройками
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton("Настроить приоритеты", callback_data="set_priority"),
-            InlineKeyboardButton("Настроить меню", callback_data="set_menu")
-        )
-        await bot.send_message(callback_query.from_user.id, "Выберите настройку:", reply_markup=keyboard)
-    else:
-        await bot.send_message(callback_query.from_user.id, "У вас нет прав на доступ к настройкам.", parse_mode="HTML")
+# Дополнительная логика для сообщений
+@dp.message(Text())
+async def echo(message: Message):
+    # Эта логика может быть заменена на конкретную обработку
+    await message.answer(f"Вы написали: {message.text}")
 
-# Настройка приоритетов запросов
-@dp.callback_query_handler(lambda c: c.data == "set_priority")
-async def set_priority(callback_query: types.CallbackQuery):
-    await bot.send_message(callback_query.from_user.id, "Введите приоритет для запроса (высокий, средний, низкий):")
-    await callback_query.answer()
-
-@dp.message_handler(lambda message: message.text in ["высокий", "средний", "низкий"])
-async def set_priority_response(message: Message):
-    priority = message.text
-    priority_settings[message.chat.id] = priority
-    await message.reply(f"Приоритет для ваших запросов установлен: {priority}", parse_mode="HTML")
-
-# Настройка меню
-@dp.callback_query_handler(lambda c: c.data == "set_menu")
-async def set_menu(callback_query: types.CallbackQuery):
-    await bot.send_message(callback_query.from_user.id, "Введите текст для кнопки меню:")
-    await callback_query.answer()
-
-@dp.message_handler(lambda message: message.text)
-async def set_menu_response(message: Message):
-    menu_settings[message.chat.id] = message.text
-    await message.reply(f"Меню изменено на: {message.text}", parse_mode="HTML")
-
-# Регистрируем обработчики
-dp.register_message_handler(handle_user_message, F.text)
-dp.register_message_handler(handle_group_reply, F.reply_to_message & F.chat_id(GROUP_OUTPUT_ID))
-dp.register_callback_query_handler(handle_callback)
-dp.register_callback_query_handler(handle_priority_choice, lambda c: c.data in ["priority_high", "priority_medium", "priority_low"])
+# Функция для получения статистики запросов
+@dp.message(Command("metrics"))
+async def metrics(message: Message):
+    # Можете здесь подключить логику для отслеживания количества запросов
+    await message.answer("Здесь будет отображаться статистика запросов.")
 
 # Запуск бота
-async def main():
+async def on_start():
     await dp.start_polling()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True)
