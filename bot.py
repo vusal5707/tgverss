@@ -2,8 +2,7 @@ import os
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
-from aiogram.filters.text import Text  # Исправленный импорт
+from aiogram.filters import Command, Text  # Используем Text напрямую из aiogram.filters
 from aiogram.utils import executor
 from dotenv import load_dotenv
 
