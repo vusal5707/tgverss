@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message
@@ -47,10 +46,11 @@ async def handle_user_message(message: Message):
 
 # Запуск бота
 async def main():
-    dp.startup.register(lambda _: print("Бот запущен!"))
+    logging.info("Бот запущен!")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     loop.run_until_complete(main())
