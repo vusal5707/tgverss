@@ -111,18 +111,18 @@ async def handle_callback(callback_query: types.CallbackQuery):
         await callback_query.answer()
 
 # Команда /settings для админа, где он может настроить данные
-@dp.message_handler(commands=['settings'])
-async def settings_handler(message: Message):
-    if message.chat.id == YOUR_ADMIN_ID:
+@dp.callback_query_handler(commands=['settings'])
+async def settings_handler(callback_query: types.CallbackQuery):
+    if callback_query.from_user.id == int(YOUR_ADMIN_ID):
         # Отправка меню с настройками
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(
             InlineKeyboardButton("Настроить приоритеты", callback_data="set_priority"),
             InlineKeyboardButton("Настроить меню", callback_data="set_menu")
         )
-        await message.reply("Выберите настройку:", reply_markup=keyboard)
+        await bot.send_message(callback_query.from_user.id, "Выберите настройку:", reply_markup=keyboard)
     else:
-        await message.reply("У вас нет прав на доступ к настройкам.", parse_mode="HTML")
+        await bot.send_message(callback_query.from_user.id, "У вас нет прав на доступ к настройкам.", parse_mode="HTML")
 
 # Настройка приоритетов запросов
 @dp.callback_query_handler(lambda c: c.data == "set_priority")
@@ -148,14 +148,14 @@ async def set_menu_response(message: Message):
     await message.reply(f"Меню изменено на: {message.text}", parse_mode="HTML")
 
 # Регистрируем обработчики
-dp.message.register(handle_user_message, F.text)
-dp.message.register(handle_group_reply, F.reply_to_message & F.chat_id(GROUP_OUTPUT_ID))
-dp.callback_query.register(handle_callback)
-dp.callback_query.register(handle_priority_choice, lambda c: c.data in ["priority_high", "priority_medium", "priority_low"])
+dp.register_message_handler(handle_user_message, F.text)
+dp.register_message_handler(handle_group_reply, F.reply_to_message & F.chat_id(GROUP_OUTPUT_ID))
+dp.register_callback_query_handler(handle_callback)
+dp.register_callback_query_handler(handle_priority_choice, lambda c: c.data in ["priority_high", "priority_medium", "priority_low"])
 
 # Запуск бота
 async def main():
-    await dp.start_polling(bot)
+    await dp.start_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
