@@ -1,12 +1,9 @@
 import logging
 import os
-import re
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message, ParseMode
-from aiogram.utils import executor
-from aiogram.dispatcher.filters import Text
+from aiogram.types import Message, CallbackQuery
+from aiogram import F
 from dotenv import load_dotenv
-from datetime import datetime
 
 # Загрузка переменных из .env
 load_dotenv()
@@ -17,109 +14,120 @@ GROUP_OUTPUT_ID = os.getenv("GROUP_OUTPUT_ID")  # Группа, куда бот 
 # Настройка бота
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
-
-# Логирование запросов
-requests_log = []
-
-# Фильтрация запросов по категориям (пример категорий)
-categories = ['финансовые', 'юридические', 'технические', 'другие']
-
-# Приоритеты запросов
-priorities = ['низкий', 'средний', 'высокий']
+dp = Dispatcher()
 
 # Хранение соответствия между запросами и пользователями
 user_requests = {}
 
+# Метрики
+metrics = {
+    "total_requests": 0,
+    "approved_requests": 0,
+    "rejected_requests": 0,
+    "pending_requests": 0
+}
+
 # Обработчик сообщений от пользователей
 @dp.message_handler()
 async def handle_user_message(message: Message):
-    text = message.text
     chat_id = message.chat.id
+    text = message.text
     
     # Разбиваем сообщение по пробелам
     parts = text.split()
     if len(parts) < 4:
-        await message.reply("Ошибка! Отправьте данные в формате: \nТип документа Party ID Email Дата Категория Приоритет (опционально)")
+        await message.reply("Ошибка! Отправьте данные в формате: \nТип документа Party ID Email Дата")
         return
     
     doc_type, party_id, email, date = parts[0], parts[1], parts[2], " ".join(parts[3:])
     
-    # Запрос с прикрепленным файлом
-    if message.document:
-        file_info = await bot.get_file(message.document.file_id)
-        file_url = f'https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}'
-        attached_file = f'Файл: {file_url}'
-    else:
-        attached_file = "Файл не прикреплен."
-
-    # Разбиваем дату на категории и приоритеты
-    category = "другие"
-    priority = "средний"
-
-    # Сохраняем лог запроса
-    request = {
-        'doc_type': doc_type,
-        'party_id': party_id,
-        'email': email,
-        'date': date,
-        'category': category,
-        'priority': priority,
-        'attached_file': attached_file,
-        'timestamp': datetime.now()
-    }
-    
-    requests_log.append(request)
-
-    # Форматируем сообщение для отправки в группу
-    formatted_message = (f"🔹 Запрос от пользователя {chat_id}\n"
+    formatted_message = (f"🔹 Дополнительная верификация\n"
+                         f"Клиент предоставил документы\n"
                          f"📄 Тип документа: {doc_type}\n"
                          f"🆔 Party ID: {party_id}\n"
                          f"📧 Email: {email}\n"
-                         f"📅 Дата: {date}\n"
-                         f"🗂 Категория: {category}\n"
-                         f"⚠️ Приоритет: {priority}\n"
-                         f"{attached_file}")
-
-    # Отправляем запрос в группу
+                         f"📅 Дата: {date}")
+    
+    # Отправляем сообщение в группу №2
     sent_message = await bot.send_message(GROUP_OUTPUT_ID, formatted_message)
     user_requests[sent_message.message_id] = chat_id  # Связываем запрос с отправителем
+
+    # Обновляем метрику по запросам
+    metrics["total_requests"] += 1
+    metrics["pending_requests"] += 1
+    
+    # Создаем кнопки для ответа
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    approve_button = types.InlineKeyboardButton("Да", callback_data=f"approve_{sent_message.message_id}")
+    reject_button = types.InlineKeyboardButton("Нет", callback_data=f"reject_{sent_message.message_id}")
+    custom_button = types.InlineKeyboardButton("Свой ответ", callback_data=f"custom_{sent_message.message_id}")
+    keyboard.add(approve_button, reject_button, custom_button)
+    
+    # Редактируем сообщение в группе №2, добавляем кнопки
+    await bot.edit_message_text(formatted_message, chat_id=GROUP_OUTPUT_ID, message_id=sent_message.message_id, reply_markup=keyboard)
     
     await message.reply("Запрос отправлен!")
 
-# Интерфейс для администраторов (просмотр запросов и фильтрация)
-@dp.message_handler(commands=['admin'])
-async def admin_interface(message: Message):
-    admin_id = message.from_user.id
-    if admin_id == YOUR_ADMIN_ID:  # Замените на ID администратора
-        text = "Административный интерфейс:\n\n"
-        for request in requests_log:
-            text += (f"📄 {request['doc_type']} | 🆔 {request['party_id']} | 📧 {request['email']} | "
-                     f"🗂 {request['category']} | ⚠️ {request['priority']} | 📅 {request['date']}\n"
-                     f"{request['attached_file']}\n\n")
-        await message.reply(text)
-    else:
-        await message.reply("У вас нет доступа к этому интерфейсу.")
+# Обработчик ответов в группе OUTPUT
+@dp.message_handler(ReplyFilter(), chat_id=GROUP_OUTPUT_ID)
+async def handle_group_reply(message: Message):
+    if message.reply_to_message and message.reply_to_message.message_id in user_requests:
+        user_chat_id = user_requests[message.reply_to_message.message_id]
+        await bot.send_message(user_chat_id, f"Ответ на ваш запрос:\n{message.text}")
 
-# Функция для создания отчетов (по запросам с фильтрацией)
-@dp.message_handler(commands=['report'])
-async def generate_report(message: Message):
-    admin_id = message.from_user.id
-    if admin_id == YOUR_ADMIN_ID:  # Замените на ID администратора
-        text = "Отчет по запросам:\n\n"
-        
-        # Фильтруем по категориям
-        category_filter = message.text.split()[-1] if len(message.text.split()) > 1 else None
-        filtered_requests = [req for req in requests_log if (category_filter and req['category'] == category_filter) or not category_filter]
-        
-        for req in filtered_requests:
-            text += (f"📄 {req['doc_type']} | 🆔 {req['party_id']} | 📧 {req['email']} | "
-                     f"🗂 {req['category']} | ⚠️ {req['priority']} | 📅 {req['date']}\n"
-                     f"{req['attached_file']}\n\n")
-        await message.reply(text)
-    else:
-        await message.reply("У вас нет доступа к этому отчету.")
+# Обработчик нажатий на кнопки (да, нет, свой ответ)
+@dp.callback_query_handler(lambda c: c.data.startswith("approve") or c.data.startswith("reject") or c.data.startswith("custom"))
+async def handle_callback(callback: CallbackQuery):
+    action, message_id = callback.data.split("_", 1)
+    message_id = int(message_id)  # Преобразуем id сообщения в число
+
+    # Проверяем, что сообщение принадлежит группе OUTPUT
+    if callback.message.chat.id != GROUP_OUTPUT_ID:
+        return
+
+    # Проверяем, есть ли запрос с таким message_id
+    if message_id not in user_requests:
+        await callback.answer("Ошибка: запрос не найден!", show_alert=True)
+        return
+    
+    user_chat_id = user_requests[message_id]
+    
+    # Действия при нажатии кнопок
+    if action == "approve":
+        await bot.send_message(user_chat_id, "✅ <b>Ваш запрос одобрен!</b>")
+        await callback.message.edit_text(callback.message.text + "\n\n✅ <b>Админ одобрил запрос.</b>", reply_markup=None)
+
+        # Обновляем метрики
+        metrics["approved_requests"] += 1
+        metrics["pending_requests"] -= 1
+
+    elif action == "reject":
+        await bot.send_message(user_chat_id, "❌ <b>Ваш запрос отклонён.</b>")
+        await callback.message.edit_text(callback.message.text + "\n\n❌ <b>Админ отклонил запрос.</b>", reply_markup=None)
+
+        # Обновляем метрики
+        metrics["rejected_requests"] += 1
+        metrics["pending_requests"] -= 1
+
+    elif action == "custom":
+        await bot.send_message(user_chat_id, "✏️ Напишите свой ответ в этом чате.")
+        # Временно связываем админа с пользователем для ответа
+        user_requests[callback.from_user.id] = user_chat_id
+
+    await callback.answer()  # Подтверждаем нажатие кнопки
+
+# Функция для получения текущих метрик
+@dp.message_handler(commands=['metrics'])
+async def show_metrics(message: Message):
+    metric_message = (
+        f"📊 <b>Метрики бота</b>\n\n"
+        f"✅ Обработано запросов: {metrics['total_requests']}\n"
+        f"✅ Одобрено запросов: {metrics['approved_requests']}\n"
+        f"❌ Отклонено запросов: {metrics['rejected_requests']}\n"
+        f"⏳ В процессе запросов: {metrics['pending_requests']}\n"
+    )
+    await message.reply(metric_message)
 
 # Запуск бота
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    dp.run_polling(bot)  # Используем run_polling вместо executor
