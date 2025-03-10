@@ -24,19 +24,24 @@ dp = Dispatcher(storage=MemoryStorage())
 user_requests = {}
 
 
-# Обработчик сообщений от пользователей
+# Обработчик сообщений от пользователей (включая файлы)
 @dp.message()
 async def handle_user_message(message: Message):
     chat_id = message.chat.id
-    text = message.text
+    text = message.caption if message.caption else message.text  # Если есть подпись к файлу, используем её
 
     # Проверяем, что сообщение не из группы №2
     if chat_id == GROUP_OUTPUT_ID:
         return
 
+    if not text:
+        await message.reply("Ошибка! Отправьте данные в формате:\n<b>Тип документа Party ID Email Дата</b>\n"
+                            "Если прикрепляете файл, добавьте текст с данными в подпись.")
+        return
+
     parts = text.split()
     if len(parts) < 4:
-        await message.reply("Ошибка! Отправьте данные в формате: \n<b>Тип документа Party ID Email Дата</b>")
+        await message.reply("Ошибка! Отправьте данные в формате:\n<b>Тип документа Party ID Email Дата</b>")
         return
 
     doc_type, party_id, email, date = parts[0], parts[1], parts[2], " ".join(parts[3:])
@@ -55,12 +60,22 @@ async def handle_user_message(message: Message):
         [InlineKeyboardButton(text="✏️ Свой ответ", callback_data=f"custom_{message.message_id}")]
     ])
 
-    sent_message = await bot.send_message(GROUP_OUTPUT_ID, formatted_message, reply_markup=keyboard)
-    
-    # Сохраняем связь между запросом и пользователем
-    user_requests[sent_message.message_id] = chat_id
+    sent_message = None
 
-    await message.reply("Запрос отправлен!")
+    # Проверяем, есть ли вложенный файл
+    if message.document:
+        sent_message = await bot.send_document(GROUP_OUTPUT_ID, message.document.file_id, caption=formatted_message, reply_markup=keyboard)
+    elif message.photo:
+        sent_message = await bot.send_photo(GROUP_OUTPUT_ID, message.photo[-1].file_id, caption=formatted_message, reply_markup=keyboard)
+    elif message.video:
+        sent_message = await bot.send_video(GROUP_OUTPUT_ID, message.video.file_id, caption=formatted_message, reply_markup=keyboard)
+    else:
+        sent_message = await bot.send_message(GROUP_OUTPUT_ID, formatted_message, reply_markup=keyboard)
+
+    # Сохраняем связь между запросом и пользователем
+    if sent_message:
+        user_requests[sent_message.message_id] = chat_id
+        await message.reply("Запрос отправлен!")
 
 
 # Обработчик нажатий на кнопки
@@ -74,11 +89,9 @@ async def handle_callback(callback: CallbackQuery):
     if chat_id != GROUP_OUTPUT_ID:
         return
 
-    # Получаем ID сообщения, на которое нажали
     action, original_message_id = callback_data.split("_")
     original_message_id = int(original_message_id)
 
-    # Проверяем, связан ли этот запрос с пользователем
     if original_message_id not in user_requests:
         await callback.answer("Ошибка: запрос не найден!", show_alert=True)
         return
@@ -105,9 +118,8 @@ async def handle_callback(callback: CallbackQuery):
 async def handle_admin_custom_reply(message: Message):
     admin_id = message.chat.id
 
-    # Проверяем, писал ли этот админ кастомный ответ
     if admin_id in user_requests:
-        user_chat_id = user_requests.pop(admin_id)  # Убираем из памяти после отправки
+        user_chat_id = user_requests.pop(admin_id)
         await bot.send_message(user_chat_id, f"✉️ <b>Ответ от администратора:</b>\n{message.text}")
 
 
