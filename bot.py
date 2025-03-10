@@ -2,7 +2,8 @@ import logging
 import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
+from aiogram import F
+from aiogram.utils import get_current_loop
 from dotenv import load_dotenv
 
 # Загрузка переменных из .env
@@ -15,7 +16,7 @@ YOUR_ADMIN_ID = os.getenv("YOUR_ADMIN_ID")  # ID администратора
 # Настройка бота
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 # Хранение соответствия между запросами и пользователями
 user_requests = {}
@@ -75,5 +76,9 @@ async def handle_callback(callback_query: types.CallbackQuery):
         await callback_query.answer()
 
 # Запуск бота
+async def main():
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    loop = get_current_loop()
+    loop.run_until_complete(main())
