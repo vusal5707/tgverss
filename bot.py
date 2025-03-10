@@ -2,8 +2,7 @@ import os
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
-from aiogram.filters.text import Text  # Используем Text из aiogram.filters.text
+from aiogram.filters import Command, Text
 from aiogram.utils import executor
 from dotenv import load_dotenv
 
@@ -16,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 # Токен бота из .env
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 # Команда /start
 @dp.message(Command("start"))
@@ -71,12 +70,4 @@ async def echo(message: Message):
 # Функция для получения статистики запросов
 @dp.message(Command("metrics"))
 async def metrics(message: Message):
-    # Можете здесь подключить логику для отслеживания количества запросов
-    await message.answer("Здесь будет отображаться статистика запросов.")
-
-# Запуск бота
-async def on_start():
-    await dp.start_polling()
-
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    # Можете з
