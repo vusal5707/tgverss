@@ -22,7 +22,6 @@ dp = Dispatcher()
 user_requests = {}
 
 # Обработчик сообщений от пользователей
-@dp.message_handler()
 async def handle_user_message(message: Message):
     chat_id = message.chat.id
     text = message.text
@@ -55,14 +54,12 @@ async def handle_user_message(message: Message):
     await message.reply("Запрос отправлен!", parse_mode="HTML")
 
 # Обработчик ответов в группе OUTPUT (от админа)
-@dp.message_handler()
 async def handle_group_reply(message: Message):
     if message.reply_to_message and message.reply_to_message.message_id in user_requests:
         user_chat_id = user_requests[message.reply_to_message.message_id]
         await bot.send_message(user_chat_id, f"Ответ на ваш запрос:\n{message.text}", parse_mode="HTML")
 
 # Обработчик callback кнопок (Да, Нет, Свой ответ)
-@dp.callback_query_handler()
 async def handle_callback(callback_query: types.CallbackQuery):
     user_chat_id = user_requests.get(callback_query.message.message_id)
     if user_chat_id:
@@ -75,9 +72,14 @@ async def handle_callback(callback_query: types.CallbackQuery):
         
         await callback_query.answer()
 
+# Регистрируем обработчики
+dp.message.register(handle_user_message, F.text)
+dp.message.register(handle_group_reply, F.reply_to_message & F.chat_id(GROUP_OUTPUT_ID))
+dp.callback_query.register(handle_callback)
+
 # Запуск бота
 async def main():
-    await dp.start_polling(bot)
+    await dp.start_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
