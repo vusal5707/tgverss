@@ -1,20 +1,23 @@
 import logging
 import os
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.storage.memory import MemoryStorage
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_INPUT_ID = int(os.getenv("GROUP_INPUT_ID"))  # Группа, где пишут запросы
-GROUP_OUTPUT_ID = int(os.getenv("GROUP_OUTPUT_ID"))  # Группа, куда бот пересылает
+GROUP_INPUT_ID = int(os.getenv("GROUP_INPUT_ID"))  # Группа №1 (куда пишут пользователи)
+GROUP_OUTPUT_ID = int(os.getenv("GROUP_OUTPUT_ID"))  # Группа №2 (куда бот отправляет)
 
-# Настройка бота
+# Настройка логов
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+
+# Создаём экземпляры бота и диспетчера
+bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
+dp = Dispatcher(storage=MemoryStorage())
 
 # Хранение соответствия между запросами и пользователями
 user_requests = {}
@@ -32,17 +35,17 @@ async def handle_user_message(message: Message):
 
     parts = text.split()
     if len(parts) < 4:
-        await message.reply("Ошибка! Отправьте данные в формате: \nТип документа Party ID Email Дата")
+        await message.reply("Ошибка! Отправьте данные в формате: \n<b>Тип документа Party ID Email Дата</b>")
         return
 
     doc_type, party_id, email, date = parts[0], parts[1], parts[2], " ".join(parts[3:])
     
-    formatted_message = (f"🔹 Дополнительная верификация\n"
-                         f"Клиент предоставил документы\n"
-                         f"📄 Тип документа: {doc_type}\n"
-                         f"🆔 Party ID: {party_id}\n"
-                         f"📧 Email: {email}\n"
-                         f"📅 Дата: {date}")
+    formatted_message = (f"🔹 <b>Дополнительная верификация</b>\n"
+                         f"Клиент предоставил документы:\n"
+                         f"📄 <b>Тип документа:</b> {doc_type}\n"
+                         f"🆔 <b>Party ID:</b> {party_id}\n"
+                         f"📧 <b>Email:</b> {email}\n"
+                         f"📅 <b>Дата:</b> {date}")
 
     # Кнопки для админов
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -82,15 +85,15 @@ async def handle_callback(callback: CallbackQuery):
     user_chat_id = user_requests[original_message_id]
 
     if action == "approve":
-        await bot.send_message(user_chat_id, "✅ Ваш запрос одобрен!")
-        await callback.message.edit_text(callback.message.text + "\n\n✅ Админ одобрил запрос.", reply_markup=None)
+        await bot.send_message(user_chat_id, "✅ <b>Ваш запрос одобрен!</b>")
+        await callback.message.edit_text(callback.message.text + "\n\n✅ <b>Админ одобрил запрос.</b>", reply_markup=None)
 
     elif action == "reject":
-        await bot.send_message(user_chat_id, "❌ Ваш запрос отклонён.")
-        await callback.message.edit_text(callback.message.text + "\n\n❌ Админ отклонил запрос.", reply_markup=None)
+        await bot.send_message(user_chat_id, "❌ <b>Ваш запрос отклонён.</b>")
+        await callback.message.edit_text(callback.message.text + "\n\n❌ <b>Админ отклонил запрос.</b>", reply_markup=None)
 
     elif action == "custom":
-        await bot.send_message(admin_id, "✏️ Напишите свой ответ в этом чате.")
+        await bot.send_message(admin_id, "✏️ <b>Напишите свой ответ в этом чате.</b>")
         user_requests[admin_id] = user_chat_id  # Временное хранение связи
 
     await callback.answer()
@@ -104,5 +107,12 @@ async def handle_admin_custom_reply(message: Message):
     # Проверяем, писал ли этот админ кастомный ответ
     if admin_id in user_requests:
         user_chat_id = user_requests.pop(admin_id)  # Убираем из памяти после отправки
-        await bot.send_message(user_chat_id, f"✉️ Ответ от администратора:\n{message.text}")
+        await bot.send_message(user_chat_id, f"✉️ <b>Ответ от администратора:</b>\n{message.text}")
 
+
+async def main():
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
