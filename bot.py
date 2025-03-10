@@ -1,33 +1,31 @@
 import logging
 import os
 import re
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message
-from aiogram import executor
-from aiogram.dispatcher.filters import ReplyFilter
 from dotenv import load_dotenv
 
 # Загрузка переменных из .env
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_INPUT_ID = os.getenv("GROUP_INPUT_ID")  # Группа, где пишут запросы
-GROUP_OUTPUT_ID = os.getenv("GROUP_OUTPUT_ID")  # Группа, куда бот пересылает
+GROUP_INPUT_ID = int(os.getenv("GROUP_INPUT_ID"))  # Преобразуем в int
+GROUP_OUTPUT_ID = int(os.getenv("GROUP_OUTPUT_ID"))  # Преобразуем в int
 
 # Настройка бота
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 # Хранение соответствия между запросами и пользователями
 user_requests = {}
 
 # Обработчик сообщений от пользователей
-@dp.message_handler()
+@dp.message()
 async def handle_user_message(message: Message):
     chat_id = message.chat.id
     text = message.text
     
-    # Разбиваем сообщение по пробелам
     parts = text.split()
     if len(parts) < 4:
         await message.reply("Ошибка! Отправьте данные в формате: \nТип документа Party ID Email Дата")
@@ -47,13 +45,11 @@ async def handle_user_message(message: Message):
     
     await message.reply("Запрос отправлен!")
 
-# Обработчик ответов в группе OUTPUT
-@dp.message_handler(ReplyFilter(), chat_id=GROUP_OUTPUT_ID)
-async def handle_group_reply(message: Message):
-    if message.reply_to_message and message.reply_to_message.message_id in user_requests:
-        user_chat_id = user_requests[message.reply_to_message.message_id]
-        await bot.send_message(user_chat_id, f"Ответ на ваш запрос:\n{message.text}")
-
 # Запуск бота
+async def main():
+    dp.startup.register(lambda _: print("Бот запущен!"))
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
