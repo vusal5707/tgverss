@@ -1,9 +1,9 @@
 import logging
 import os
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram import F
-from aiogram.utils import get_current_loop
 from dotenv import load_dotenv
 
 # Загрузка переменных из .env
@@ -80,5 +80,4 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    loop = get_current_loop()
-    loop.run_until_complete(main())
+    asyncio.run(main())
