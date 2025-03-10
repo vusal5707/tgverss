@@ -2,8 +2,7 @@ import logging
 import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, CallbackQuery
-from aiogram.utils import executor
-from aiogram.dispatcher.filters import ReplyFilter
+from aiogram import F
 from dotenv import load_dotenv
 
 # Загрузка переменных из .env
@@ -15,7 +14,7 @@ GROUP_OUTPUT_ID = os.getenv("GROUP_OUTPUT_ID")  # Группа, куда бот 
 # Настройка бота
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 # Хранение соответствия между запросами и пользователями
 user_requests = {}
@@ -99,4 +98,4 @@ async def handle_callback(callback: CallbackQuery):
 
 # Запуск бота
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    dp.run_polling(bot)  # Используем run_polling вместо executor
