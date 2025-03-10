@@ -1,103 +1,87 @@
 import logging
 import os
-import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.client.default import DefaultBotProperties
+from aiogram.types import Message, CallbackQuery
+from aiogram.utils import executor
+from aiogram.dispatcher.filters import ReplyFilter
 from dotenv import load_dotenv
 
-# Загрузка переменных окружения
+# Загрузка переменных из .env
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_INPUT_ID = int(os.getenv("GROUP_INPUT_ID"))  # Группа №1 (куда пишут пользователи)
-GROUP_OUTPUT_ID = int(os.getenv("GROUP_OUTPUT_ID"))  # Группа №2 (куда бот отправляет)
+GROUP_INPUT_ID = os.getenv("GROUP_INPUT_ID")  # Группа, где пишут запросы
+GROUP_OUTPUT_ID = os.getenv("GROUP_OUTPUT_ID")  # Группа, куда бот пересылает
 
-# Настройка логов
+# Настройка бота
 logging.basicConfig(level=logging.INFO)
-
-# Создаём экземпляры бота и диспетчера
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher(storage=MemoryStorage())
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
 
 # Хранение соответствия между запросами и пользователями
 user_requests = {}
 
-
-# Обработчик сообщений от пользователей (включая файлы)
-@dp.message()
+# Обработчик сообщений от пользователей
+@dp.message_handler()
 async def handle_user_message(message: Message):
     chat_id = message.chat.id
-    text = message.caption if message.caption else message.text  # Если есть подпись к файлу, используем её
-
-    # Проверяем, что сообщение не из группы №2
-    if chat_id == GROUP_OUTPUT_ID:
-        return
-
-    if not text:
-        await message.reply("Ошибка! Отправьте данные в формате:\n<b>Тип документа Party ID Email Дата</b>\n"
-                            "Если прикрепляете файл, добавьте текст с данными в подпись.")
-        return
-
+    text = message.text
+    
+    # Разбиваем сообщение по пробелам
     parts = text.split()
     if len(parts) < 4:
-        await message.reply("Ошибка! Отправьте данные в формате:\n<b>Тип документа Party ID Email Дата</b>")
+        await message.reply("Ошибка! Отправьте данные в формате: \nТип документа Party ID Email Дата")
         return
-
+    
     doc_type, party_id, email, date = parts[0], parts[1], parts[2], " ".join(parts[3:])
     
-    formatted_message = (f"🔹 <b>Дополнительная верификация</b>\n"
-                         f"Клиент предоставил документы:\n"
-                         f"📄 <b>Тип документа:</b> {doc_type}\n"
-                         f"🆔 <b>Party ID:</b> {party_id}\n"
-                         f"📧 <b>Email:</b> {email}\n"
-                         f"📅 <b>Дата:</b> {date}")
+    formatted_message = (f"🔹 Дополнительная верификация\n"
+                         f"Клиент предоставил документы\n"
+                         f"📄 Тип документа: {doc_type}\n"
+                         f"🆔 Party ID: {party_id}\n"
+                         f"📧 Email: {email}\n"
+                         f"📅 Дата: {date}")
+    
+    # Отправляем сообщение в группу №2
+    sent_message = await bot.send_message(GROUP_OUTPUT_ID, formatted_message)
+    user_requests[sent_message.message_id] = chat_id  # Связываем запрос с отправителем
+    
+    # Создаем кнопки для ответа
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    approve_button = types.InlineKeyboardButton("Да", callback_data=f"approve_{sent_message.message_id}")
+    reject_button = types.InlineKeyboardButton("Нет", callback_data=f"reject_{sent_message.message_id}")
+    custom_button = types.InlineKeyboardButton("Свой ответ", callback_data=f"custom_{sent_message.message_id}")
+    keyboard.add(approve_button, reject_button, custom_button)
+    
+    # Редактируем сообщение в группе №2, добавляем кнопки
+    await bot.edit_message_text(formatted_message, chat_id=GROUP_OUTPUT_ID, message_id=sent_message.message_id, reply_markup=keyboard)
+    
+    await message.reply("Запрос отправлен!")
 
-    # Кнопки для админов
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Да", callback_data=f"approve_{message.message_id}")],
-        [InlineKeyboardButton(text="❌ Нет", callback_data=f"reject_{message.message_id}")],
-        [InlineKeyboardButton(text="✏️ Свой ответ", callback_data=f"custom_{message.message_id}")]
-    ])
+# Обработчик ответов в группе OUTPUT
+@dp.message_handler(ReplyFilter(), chat_id=GROUP_OUTPUT_ID)
+async def handle_group_reply(message: Message):
+    if message.reply_to_message and message.reply_to_message.message_id in user_requests:
+        user_chat_id = user_requests[message.reply_to_message.message_id]
+        await bot.send_message(user_chat_id, f"Ответ на ваш запрос:\n{message.text}")
 
-    sent_message = None
-
-    # Проверяем, есть ли вложенный файл
-    if message.document:
-        sent_message = await bot.send_document(GROUP_OUTPUT_ID, message.document.file_id, caption=formatted_message, reply_markup=keyboard)
-    elif message.photo:
-        sent_message = await bot.send_photo(GROUP_OUTPUT_ID, message.photo[-1].file_id, caption=formatted_message, reply_markup=keyboard)
-    elif message.video:
-        sent_message = await bot.send_video(GROUP_OUTPUT_ID, message.video.file_id, caption=formatted_message, reply_markup=keyboard)
-    else:
-        sent_message = await bot.send_message(GROUP_OUTPUT_ID, formatted_message, reply_markup=keyboard)
-
-    # Сохраняем связь между запросом и пользователем
-    if sent_message:
-        user_requests[sent_message.message_id] = chat_id
-        await message.reply("Запрос отправлен!")
-
-
-# Обработчик нажатий на кнопки
-@dp.callback_query()
+# Обработчик нажатий на кнопки (да, нет, свой ответ)
+@dp.callback_query_handler(lambda c: c.data.startswith("approve") or c.data.startswith("reject") or c.data.startswith("custom"))
 async def handle_callback(callback: CallbackQuery):
-    callback_data = callback.data
-    admin_id = callback.from_user.id
-    chat_id = callback.message.chat.id
+    action, message_id = callback.data.split("_", 1)
+    message_id = int(message_id)  # Преобразуем id сообщения в число
 
-    # Проверяем, что кнопка нажата в группе №2
-    if chat_id != GROUP_OUTPUT_ID:
+    # Проверяем, что сообщение принадлежит группе OUTPUT
+    if callback.message.chat.id != GROUP_OUTPUT_ID:
         return
 
-    action, original_message_id = callback_data.split("_")
-    original_message_id = int(original_message_id)
-
-    if original_message_id not in user_requests:
+    # Проверяем, есть ли запрос с таким message_id
+    if message_id not in user_requests:
         await callback.answer("Ошибка: запрос не найден!", show_alert=True)
         return
-
-    user_chat_id = user_requests[original_message_id]
-
+    
+    user_chat_id = user_requests[message_id]
+    
+    # Действия при нажатии кнопок
     if action == "approve":
         await bot.send_message(user_chat_id, "✅ <b>Ваш запрос одобрен!</b>")
         await callback.message.edit_text(callback.message.text + "\n\n✅ <b>Админ одобрил запрос.</b>", reply_markup=None)
@@ -107,25 +91,12 @@ async def handle_callback(callback: CallbackQuery):
         await callback.message.edit_text(callback.message.text + "\n\n❌ <b>Админ отклонил запрос.</b>", reply_markup=None)
 
     elif action == "custom":
-        await bot.send_message(admin_id, "✏️ <b>Напишите свой ответ в этом чате.</b>")
-        user_requests[admin_id] = user_chat_id  # Временное хранение связи
+        await bot.send_message(user_chat_id, "✏️ Напишите свой ответ в этом чате.")
+        # Временно связываем админа с пользователем для ответа
+        user_requests[callback.from_user.id] = user_chat_id
 
-    await callback.answer()
+    await callback.answer()  # Подтверждаем нажатие кнопки
 
-
-# Обработчик сообщений от админа (для "Свой ответ")
-@dp.message()
-async def handle_admin_custom_reply(message: Message):
-    admin_id = message.chat.id
-
-    if admin_id in user_requests:
-        user_chat_id = user_requests.pop(admin_id)
-        await bot.send_message(user_chat_id, f"✉️ <b>Ответ от администратора:</b>\n{message.text}")
-
-
-async def main():
-    await dp.start_polling(bot)
-
-
+# Запуск бота
 if __name__ == "__main__":
-    asyncio.run(main())
+    executor.start_polling(dp, skip_updates=True)
