@@ -3,7 +3,7 @@ import os
 import re
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message
-from aiogram.utils import executor
+from aiogram import executor
 from aiogram.dispatcher.filters import ReplyFilter
 from dotenv import load_dotenv
 
