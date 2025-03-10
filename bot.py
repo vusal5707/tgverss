@@ -4,6 +4,7 @@ import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
@@ -16,7 +17,7 @@ GROUP_OUTPUT_ID = int(os.getenv("GROUP_OUTPUT_ID"))  # Группа №2 (куд
 logging.basicConfig(level=logging.INFO)
 
 # Создаём экземпляры бота и диспетчера
-bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(storage=MemoryStorage())
 
 # Хранение соответствия между запросами и пользователями
